@@ -1,6 +1,6 @@
 # Claude Code Playbook
 
-I'm Alec Foster, Chief Agent Officer & Responsible AI Lead at the Marketing + Media Alliance (MMA). This is the Claude Code setup I run every day, written for experienced users and for people configuring Claude Code for a team: the architecture, the settings and the reasons behind them, the multi-model routing, and 34 lessons that each cost something to learn. It is extracted from my private setup notes with everything organization-specific removed. Facts are dated: every version-sensitive claim was checked against Claude Code 2.1.286 and codex-cli 0.159.2 on 2026-09-30, and anything marked with an earlier date was verified then and has not changed since.
+I'm Alec Foster, Chief Agent Officer & Responsible AI Lead at the Marketing + Media Alliance (MMA). This is the Claude Code setup I run every day, written for experienced users and for people configuring Claude Code for a team: the architecture, the settings and the reasons behind them, the multi-model routing, and 34 lessons that each cost something to learn. It is extracted from my private setup notes with everything organization-specific removed. Facts are dated: version-sensitive claims carry the version and date they were checked, and the baseline is Claude Code 2.1.286 and codex-cli 0.159.2 on 2026-09-30.
 
 Related public repos:
 
@@ -43,19 +43,19 @@ I treat Claude Code as an operating layer that sits between me and every tool I 
 
 ## Three-layer architecture: personal repo, team template, org plugin
 
-The setup serves three audiences, and each gets its own layer:
+The pattern serves three audiences, and each gets its own layer:
 
 ```
 Personal assistant repo (full integrations, private)
   |
   |-- sync, strip private detail --> Team template (public, for power users)
   |
-  |-- sync, strip private detail --> Org plugin marketplace (every seat, via the Claude admin console)
+  |-- sync, strip private detail --> Org plugin marketplace (distributed through the Claude admin console)
 ```
 
 - **Personal assistant repo:** my working instance. About 22 local MCP servers plus about 40 claude.ai connectors, auto-memory, multi-model CLI access, and auto-mode permissions with a curated allowlist. It is a git repo with a `CLAUDE.md`, a `.claude/rules/` folder of auto-loaded rules, project skills, and slash commands.
 - **Team template:** a public GitHub template (mine is [MAVEN](https://github.com/alectivism/maven-template)) that a colleague clones to get org context, brand rules, and a set of skills, with a setup script. It bundles no integrations; each person adds their own.
-- **Org plugin marketplace:** a private plugin repo pushed to every seat through the Claude organization admin console. It holds skills with org-specific substance that staff cannot easily reproduce, plus org-defined subagents so everyone delegates to the same pinned targets. Generic drafting skills stay out of it; people build those for themselves with the skill-creator.
+- **Org plugin marketplace:** a private plugin repo that an admin can distribute to staff through the Claude organization admin console. It holds skills with org-specific substance that staff cannot easily reproduce, plus org-defined subagents so everyone delegates to the same pinned targets. Generic drafting skills stay out of it; people build those for themselves with the skill-creator.
 
 **Two-branch context model:** the personal layer holds operational detail (file-share paths, channel IDs, integration configs). The outer layers get the same org facts with that detail removed, because staff do not have the same tools and a path they cannot open wastes their context and confuses the model. Changes flow personal-first, then outward, scrubbed on the way.
 
@@ -70,7 +70,7 @@ Configuration lives at two levels.
   CLAUDE.md              # Communication style, safety rules, delegation policy
   settings.json          # Plugins, permissions, hooks, effort, statusline, env flags
   settings.local.json    # Machine-local allowlist and skill overrides (not synced)
-  remote-settings.json   # Permission layer for sessions driven from web or mobile
+  remote-settings.json   # Cached copy of server-managed org settings (written by Claude Code)
   keybindings.json       # Custom key bindings
   agents/                # Shared subagents, each pinning model and effort
   hooks/                 # PreToolUse guards (blocked tools, git push, attribution, large reads)
@@ -105,8 +105,7 @@ Rules files hold short always-on guardrails (naming, voice, routing). Long refer
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "70",
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000",
-    "CLAUDE_CODE_SUPPRESS_SESSION_ATTRIBUTION": "1"
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"
   },
   "permissions": { "defaultMode": "auto", "allow": ["..."], "deny": ["..."] },
   "effortLevel": "medium",
@@ -128,7 +127,7 @@ What each one buys:
 - **Model:** set with `/model`; there is no `model` key in my `settings.json`. On 2.1.286 the aliases `opus`, `fable`, `sonnet`, and `haiku` resolve to Opus 5.5 (`claude-opus-5-5`, my orchestrator), Fable 5.1 (`claude-fable-5-1`), Sonnet 5.5 (`claude-sonnet-5-5`), and Haiku 4.5 (`claude-haiku-4-5-20251001`). No subagent runs on Fable.
 - **`CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000`:** compaction math tracks the 1M-token window instead of the 200K default.
 - **`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70`:** compaction starts at 70% of the window, leaving headroom before the summary runs.
-- **`CLAUDE_CODE_SUPPRESS_SESSION_ATTRIBUTION=1`:** no Claude attribution lines in commits or PRs. A `git-attribution-guard.py` hook backs it up, because the setting has been reported to revert silently after updates.
+- **Commit attribution:** I also set `CLAUDE_CODE_SUPPRESS_SESSION_ATTRIBUTION=1`, which is undocumented (absent from the official env-var reference on 2026-09-30). The enforcement is a `git-attribution-guard.py` hook that blocks commits or PRs carrying Claude attribution.
 - **`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and `teammateMode: auto`:** named, addressable teammate agents that render in split panes when the terminal supports it. See [Agent teams](#agent-teams-and-terminal-orchestration).
 - **`tui: fullscreen`:** works around a rendering glitch where scrolling duplicated text indefinitely.
 - **`remoteControlAtStartup` and `agentPushNotifEnabled`:** every session is steerable from web and mobile from its first prompt, and I get a push when a background agent finishes or blocks.
@@ -215,7 +214,7 @@ The limit: the script toggles user-scope servers only. A server added with local
 
 ## Multi-model orchestration: Codex, Gemini, and quota routing
 
-Claude Code orchestrates four model families: Claude (Team plan, Premium seat), GPT through the Codex CLI (ChatGPT Pro subscription), Gemini through `gemini -p` (free API tier, Flash only) and Google's Antigravity CLI `agy` (Google AI Pro subscription), and Grok through an MCP wrapper (API-billed). Subscriptions are rate-limited, so routing follows a quota signal described below.
+Claude Code orchestrates four model families: Claude (subscription), GPT through the Codex CLI (ChatGPT subscription), Gemini through `gemini -p` (free API tier, Flash only) and Google's Antigravity CLI `agy` (Google subscription), and Grok through an MCP wrapper (API-billed). Subscriptions are rate-limited, so routing follows a quota signal described below.
 
 Three tiers of access:
 
@@ -228,7 +227,7 @@ Three tiers of access:
 # and must sit within the current workspace.
 gemini -p "summarize @doc1.md and @doc2.md into 5 bullets"
 
-# Antigravity CLI: Gemini 3.1 Pro and other models on the AI Pro subscription.
+# Antigravity CLI: Gemini 3.1 Pro and other models on a Google subscription.
 # Tight weekly quota, so use it for second opinions.
 agy --model "Gemini 3.1 Pro (High)" -p "<prompt>"
 
@@ -246,7 +245,7 @@ The model classifies the task into one enum; a script owns every flag. `codex-ru
 
 | Class | Tier / effort | Model on 2026-09-30 |
 |---|---|---|
-| `review` | frontier / medium | GPT-6 Astra (`gpt-6-astra`), about 5x Sol's usage per call |
+| `review` | frontier / medium | GPT-6 Astra (`gpt-6-astra`); its Codex credit rate is 5x GPT-6.1 Sol per uncached token |
 | `hardest` | frontier / high | GPT-6 Astra |
 | `implement`, `explore`, `ingest`, `prose` | standard / medium | GPT-6.1 Sol (`gpt-6.1-sol`) |
 | `commit` | fast / low | GPT-6 Luna (`gpt-6-luna`); I override it to Sol with `CODEX_FAST_FAMILY=sol` |
@@ -255,9 +254,9 @@ Details that each cost a failure to learn:
 
 - **Resolve by family name:** resolving tiers by catalog rank swapped frontier and standard on 2026-09-22, when the catalog listed Sol above Astra.
 - **Escalate on evidence:** `--escalate` lifts a class one rung. Medium is the default; going past high needs a specific observed failure.
-- **Refuse the priority service tier:** it bills 2.5x included subscription usage (2x on purchased credits), and OpenAI publishes no speedup figure for GPT-6 models. The wrapper pins `service_tier="default"` and exits with an error on `--priority`. Answers are pinned to low verbosity.
-- **`--ignore-user-config` is the cold-start fix:** TOML table overrides merge, so `-c 'mcp_servers={}'` changes nothing, and `codex mcp list -c 'mcp_servers={}'` still lists every server (found 2026-07-15). `--ignore-user-config` drops all MCP servers and plugins while auth survives through `CODEX_HOME`. The side effect: Codex workers see only the prompt plus files under `-C`, so the prompt must carry full context.
-- **Block the raw path:** a PreToolUse hook (`codex-guard.sh`) denies any Bash call to `codex exec` that bypasses the wrapper. The escape hatch is a `CODEX_RAW=1` prefix plus a stated reason.
+- **Refuse the priority service tier:** it bills 2.5x included subscription usage (2x on purchased credits), and OpenAI publishes no Fast-mode speedup figure for GPT-6 (Astra Ultrafast is documented at up to 8x). The wrapper pins `service_tier="default"` and exits with an error on `--priority`. Answers are pinned to low verbosity.
+- **`--ignore-user-config` is the cold-start fix:** TOML table overrides merge, so `-c 'mcp_servers={}'` changes nothing, and `codex mcp list -c 'mcp_servers={}'` still lists every server (found 2026-07-15). `--ignore-user-config` skips `$CODEX_HOME/config.toml`, so the MCP servers and plugins defined there never start, while auth still resolves through `CODEX_HOME`. The side effect: Codex workers have no MCP tools, so the prompt must carry full context. It is not a filesystem boundary; the sandbox flag is what restricts writes.
+- **Block the raw path:** a PreToolUse hook (`codex-guard.sh`) denies any Bash call to `codex exec` that bypasses the wrapper.
 
 ### Quota-aware routing
 
@@ -287,7 +286,8 @@ A skill enters context when:
 
 1. A slash command invokes it by name.
 2. Its description matches the current task, and the model calls the `Skill` tool.
-3. A plugin that ships it is enabled.
+
+Enabling a plugin makes its skills discoverable: their names and descriptions join the listing, and each body loads only when invoked.
 
 At session start the model sees each skill's name and description. That listing is the whole trigger surface, which makes the description the most important line in the skill.
 
@@ -300,10 +300,10 @@ At session start the model sees each skill's name and description. That listing 
 
 ### Retiring a skill
 
-Skills are discovered by directory presence under a `skills/` path, so there are three levels of off:
+Skills are discovered by directory presence under a `skills/` path, and there are three levels of off:
 
 1. **Name-only:** `skillOverrides` in `.claude/settings.local.json` (managed from the `/skills` dialog) keeps the name in the listing but suppresses the description. It costs a few tokens and stops description-match triggering, while `/name` still works.
-2. **Full disable:** move the directory out of the discovered path, for example into `.claude/_disabled-skills/`. It vanishes from the listing; moving it back restores it.
+2. **Hidden:** use the visibility overrides that settings support (the `/skills` dialog writes them to `skillOverrides`). Moving the directory out of the discovered path, for example into `.claude/_disabled-skills/`, also removes it from the listing, and moving it back restores it.
 3. **Delete:** only when it is dead. Git keeps the history.
 
 Whole plugins toggle through `enabledPlugins` in `settings.json`. In a 2026-07-12 audit I cut 9 project skills, and on 2026-09-15 I merged two overlapping writing-style skills into one skill plus a linter script.
@@ -327,13 +327,19 @@ Handle it directly for 1 or 2 lookups, edits to existing content, and anything w
 
 Route by the judgment the task needs. The `model:` and `effort:` frontmatter fields pin each custom agent.
 
-- **haiku (Haiku 4.5):** high-token, low-judgment work where any competent reader would produce the same output and the decision rule fits in the prompt as an explicit threshold. Briefs must be mechanical: exact calls, numeric thresholds, a hard call budget, raw values next to computed ones, and an instruction to return results through `SendMessage` (Haiku otherwise ends its turn silently).
+- **haiku (Haiku 4.5):** high-token, low-judgment work where any competent reader would produce the same output and the decision rule fits in the prompt as an explicit threshold. Briefs must be mechanical: exact calls, numeric thresholds, a hard call budget, raw values next to computed ones, and an instruction to return results through `SendMessage` (in my runs through September 2026, Haiku otherwise often ended its turn without reporting).
 - **sonnet (Sonnet 5.5):** the default for delegation. Review, search, docs lookup, summarization, classification, multi-step retrieval.
 - **opus (Opus 5.5):** research that feeds a decision, docs, tests, critiques, red-teaming, architecture calls, high-stakes prose. Opus 5.5 at low effort now does most judgment work, because effort is a stronger cost lever than tier.
 
 ### The built-in-agent trap
 
-Custom agents (in `~/.claude/agents/`, a project's `.claude/agents/`, or a plugin) pin their model in frontmatter. The built-in types (`general-purpose`, `Explore`, `Plan`, `claude-code-guide`, and `fork`) carry no pin and silently inherit the orchestrator's model. Dispatch `Explore` to grep for a symbol from an Opus session and the grep runs on Opus. Always pass `model` explicitly on a built-in dispatch. My CLAUDE.md states this rule, but a rule is compliance; it holds only when the orchestrator remembers.
+Custom agents (in `~/.claude/agents/`, a project's `.claude/agents/`, or a plugin) pin their model in frontmatter. Most built-in types have no pin of their own, per the docs on 2026-09-30:
+
+- **`Explore` and `Plan`:** inherit the session model, capped at Opus. Dispatch `Explore` to grep for a symbol from an Opus session and the grep runs on Opus.
+- **`general-purpose`:** uses the per-call `model` parameter, then frontmatter, then `CLAUDE_CODE_SUBAGENT_MODEL`, then the session model.
+- **Fixed built-ins:** `claude-code-guide` runs on Haiku and `statusline-setup` runs on Sonnet.
+
+Two fixes. Per call: pass `model` explicitly on every built-in dispatch. Globally: set `CLAUDE_CODE_SUBAGENT_MODEL`, which sets the default model for subagents, teammates, and workflow agents not assigned one another way (a per-call `model` and a definition's `model` still win). `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` (v2.1.257+) forces it over everything, built-ins included. My CLAUDE.md also states the per-call rule, but a rule is compliance; it holds only when the orchestrator remembers.
 
 ### Agent anatomy
 
@@ -362,14 +368,14 @@ The exact structure to return.
 Design choices:
 
 - **Tool restrictions:** each agent gets only what it needs. The bug investigator has no edit tools; the reviewer is read-only.
-- **Return format baked in:** the worker's final message is re-read by the parent on every later turn, so it must be tight. Ask for evidence, sources, and reasoning in a short brief, and forbid raw dumps. A subagent sees none of the parent conversation, so the brief must carry full context.
+- **Return format baked in:** the worker's final message is re-read by the parent on every later turn, so it must be tight. Ask for evidence, sources, and reasoning in a short brief, and forbid raw dumps. A non-fork subagent sees none of the parent conversation, so the brief must carry full context. A `fork` subagent inherits the full conversation.
 - **Rules section:** task guardrails, such as "do NOT edit files" for an investigator or banned-word lists for a content writer.
 
 My shared set is 13 agents: researcher, fact-verifier, red-teamer (opus / high), meeting-prep, content-reviewer, test-writer, doc-writer, bug-investigator (opus / medium), summarizer and a task tracker manager (sonnet / low), and bulk-worker, pr-preparer, dependency-auditor (haiku / low). The unmarked ones run opus / low.
 
 ### Nesting and parallelism
 
-- **Nesting limit:** subagents can spawn their own subagents, up to 5 levels below the main session. Use it to keep intermediate output out of the parent: a researcher fans out per-source readers, a reviewer dispatches one verifier per finding. One level covers most work.
+- **Nesting limit:** subagents can spawn their own subagents, by default up to 3 layers below the main conversation, configurable with `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` (v2.1.219+). Use it to keep intermediate output out of the parent: a researcher fans out per-source readers, a reviewer dispatches one verifier per finding. One level covers most work.
 - **Run independent work in one message:** several Agent calls in a single message run concurrently.
 - **Build nothing on partial results:** when agents are out for research or review, the deliverable waits until every one has reported. I learned this by building one deck three times, once per late-arriving result.
 - **Known failure:** an agent told it may delegate sometimes nests an Agent call and returns empty. Tell research agents to research directly, and resume them if they come back blank.
@@ -389,7 +395,7 @@ Hooks I run:
 
 | Event | Script | What it does |
 |---|---|---|
-| SessionStart | `mcp-env.sh` then `mcp-profile.sh` | Unsets `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`, then applies the MCP profile |
+| SessionStart | `mcp-profile.sh` | Applies the MCP profile |
 | SessionStart, UserPromptSubmit | `quota-probe.sh --line` | Prints the QUOTA line; refreshes a stale Codex reading in the background without a model call |
 | PreToolUse | `block-openai-mcp.py` | Denies any `mcp__openai__*` call |
 | PreToolUse | `codex-guard.sh` | Denies raw `codex exec`; points to the wrapper |
@@ -401,7 +407,7 @@ Hooks I run:
 
 Notes on three of them:
 
-- **The API-key unset matters:** a stray `ANTHROPIC_API_KEY` in the environment makes Claude Code bill the API instead of the subscription, silently.
+- **Clear stray API keys before launch:** a stray `ANTHROPIC_API_KEY` in the environment makes Claude Code bill the API instead of the subscription. A hook subprocess cannot change the parent's auth environment, so unset it in your shell profile before launching Claude, and confirm with `/status` which auth is active.
 - **The push guard exists because of a 12-day miss:** in August 2026 a push run from the wrong branch reported success while the target branch stayed unpublished for 12 days.
 - **The clipboard lint scans the whole command:** a heredoc that merely mentions the clipboard tool gets linted too, which is a false positive I accept.
 
@@ -411,7 +417,7 @@ Notes on three of them:
 
 ### Auto mode plus an allowlist
 
-I moved off blanket `bypassPermissions` to `defaultMode: auto` with a curated allowlist of about 97 tool patterns (git, gh, npm, and the read tools of my MCP servers). Anything on `allow` runs without a prompt, anything on `deny` is blocked, and the auto-mode classifier decides the rest. Day-to-day friction matches bypass, and a novel command still gets a decision.
+I moved off blanket `bypassPermissions` to `defaultMode: auto` with a curated allowlist of tool patterns (git, gh, npm, and the read tools of my MCP servers). Anything on `allow` runs without a prompt, anything on `deny` is blocked, and the auto-mode classifier decides the rest. Day-to-day friction matches bypass, and a novel command still gets a decision.
 
 ```json
 {
@@ -428,27 +434,13 @@ I moved off blanket `bypassPermissions` to `defaultMode: auto` with a curated al
 - **`settings.local.json`:** a smaller machine-local allowlist that does not sync.
 - **Untrusted repos:** a `.claude/` directory in a cloned repo can carry permissions and hooks. For team deployments use the standard permission modes and review `.claude/` before trusting a repo.
 
-### Remote sessions get their own layer
+### Org-wide rules belong in server-managed settings
 
-`~/.claude/remote-settings.json` applies to sessions driven from web or mobile:
-
-```json
-{
-  "channelsEnabled": true,
-  "permissions": {
-    "defaultMode": "auto",
-    "ask": ["Bash(git push --force *)", "Bash(git push -f *)", "Bash(git push --mirror*)"],
-    "deny": ["Bash(rm -rf /)", "Bash(rm *~/.ssh*)", "Bash(rm *.git/*)", "Bash(sudo rm *)",
-             "Bash(chmod *777*)", "Read(./.env)", "Read(~/.ssh/**)", "..."]
-  }
-}
-```
-
-About 27 hard blocks: `rm` against `/`, `~`, `~/.ssh`, `~/.config`, `~/.claude`, `~/Library`, cloud-storage folders, and `.git`; `sudo rm` and `sudo chmod`; world-writable `chmod`; and reads of `.env`, credentials, `~/.ssh`, and `~/.aws`. A session steered from a phone carries guardrails that do not depend on me reading every step.
+Rules that must hold for every person and every session (hard `deny` entries for `rm -rf /`, reads of `.env` or `~/.ssh`, force pushes) belong in server-managed settings set by an admin in the Claude admin console, which apply to every session. Claude Code caches them locally as `~/.claude/remote-settings.json` (or `{}` when the organization has none), checks for updates at startup and hourly, and deletes the cache on logout. Edit the admin console, never the cache.
 
 ### Secrets live in a password manager
 
-No `.env` files. Secrets live in a password manager that mounts them as an in-memory named pipe (no plaintext on disk). The shell loads them from a login-keychain cache of that mount, and a background job re-syncs the cache at login and every 30 minutes, with a command for an immediate sync. MCP servers read their keys from the shell environment. Rotating a key means editing it in the password manager's GUI; nothing in any repo changes.
+No `.env` files. Secrets live in a password-manager environment, never in a repo, and MCP servers read their keys from the shell environment. Rotating a key means editing it in the password manager; nothing in any repo changes.
 
 Safety rules in my global CLAUDE.md:
 
@@ -583,9 +575,9 @@ Prompts worth reusing:
 
 ### Multi-model
 
-5. **Several model families beat one.** Gemini brings Google Search grounding and a 1M-token window for large-file synthesis; GPT through Codex catches different bugs in review; Claude has the deepest tool integration.
+5. **Several model families beat one.** Gemini brings Google Search grounding and a 1M-token window for large-file synthesis; GPT through Codex catches different bugs in review; in my use through September 2026, Claude had the deepest tool integration.
 6. **CLI offloading is context economics.** When Gemini reads 15 files and returns 200 words, Claude ingests 200 words. Model quality is a separate question.
-7. **Subscriptions are rate-limited.** Codex and `gemini -p` cost nothing per call, but every platform has windows that bind, Claude's 5-hour bucket most often. The QUOTA line turns that into a routing signal.
+7. **Subscriptions are rate-limited.** Codex and `gemini -p` add no marginal charge within included subscription allowances, but every platform has windows that bind, Claude's 5-hour bucket most often. The QUOTA line turns that into a routing signal.
 
 ### Workflow
 
@@ -596,13 +588,13 @@ Prompts worth reusing:
 ### MCP and integration
 
 11. **Use the cheapest search that fits.** Native WebSearch and WebFetch for single lookups, a bulk search MCP for breadth and non-US queries, Jina Reader as the default page fetch, and credit-metered tools (Firecrawl at 1 credit per page, Perplexity per query) only for JS rendering, anti-bot, or synthesis.
-12. **Some sites block every generic fetcher.** As of 2026-07-01, Reddit returned a 403 challenge to Firecrawl, Jina, WebFetch, and `curl` of the `.json` endpoints from my machine, and Claude's WebSearch excludes reddit.com. A dedicated scraper (an Apify actor) or scripted browser works. LinkedIn needs a dedicated MCP for the same reason.
-13. **Pin MCP versions when latest breaks.** A Slack MCP release (v1.2.3) required a `users:read` scope my token lacked; pinning v1.1.28 fixed it. Read the changelog before upgrading.
+12. **Some sites block every generic fetcher.** As of 2026-07-01, Reddit returned a 403 challenge to Firecrawl, Jina, WebFetch, and `curl` of the `.json` endpoints from my machine, and in my tests on the same date Claude's WebSearch returned no reddit.com results. A dedicated scraper (an Apify actor) or scripted browser works. LinkedIn needs a dedicated MCP for the same reason.
+13. **Pin MCP versions when latest breaks.** A minor release of a chat MCP server once required an OAuth scope my token lacked; pinning the previous version fixed it. Read the changelog before upgrading.
 14. **Custom MCPs are easy to build and easy to overpay for.** My Dynalist and Grok servers are thin wrappers over existing APIs. My GPT wrapper had the same shape and billed per token while the same models sat on a flat subscription.
 
 ### Subagent economics
 
-15. **Pin the model on every subagent.** Sonnet follows structured prompts (output formats, brand rules, tool preferences) as reliably as Opus. Built-in agent types inherit the orchestrator's model, so pass `model` on every built-in dispatch.
+15. **Pin the model on every subagent.** In my use through September 2026, Sonnet followed structured prompts (output formats, brand rules, tool preferences) as reliably as Opus. `Explore`, `Plan`, and `general-purpose` can inherit the session model, so pass `model` per call or set `CLAUDE_CODE_SUBAGENT_MODEL`.
 16. **Design for context economy.** A researcher that runs 5 searches and returns 300 words saves the parent the 5 result pages; that is the whole economic case.
 17. **A haiku tier pays off when the brief is mechanical.** Bulk edits, PR descriptions, and dependency scans run fine on Haiku 4.5 with explicit thresholds and a call budget. Task tracker CRUD moved back up to Sonnet.
 
@@ -615,7 +607,7 @@ Prompts worth reusing:
 ### Security
 
 21. **Auto mode plus an allowlist beats blanket bypass.** Same low friction for common patterns, and novel commands still get a decision. Team deployments should use standard modes, since a `.claude/` folder in an untrusted repo can carry permissions.
-22. **Confirm-before-send stays on in every mode.** A CLAUDE.md rule requires approval before any email, chat post, task change, or publish, and `remote-settings.json` adds hard filesystem and secrets blocks for phone-driven sessions.
+22. **Confirm-before-send stays on in every mode.** A CLAUDE.md rule requires approval before any email, chat post, task change, or publish. Org-wide hard blocks belong in server-managed settings, which apply to every session.
 
 ### Operations and visibility
 
@@ -636,7 +628,7 @@ Prompts worth reusing:
 31. **"Find the problems" never terminates.** "State what must be true, then check those things" turns an open-ended hunt into a checklist with a stopping rule.
 32. **Handoffs are claims.** Re-run the check a subagent or Codex run reports and label the result observed or reported. It costs one command and catches confident summaries of code that was never written.
 33. **Write the decision log before the work.** A summary written at the end is lost when the session has no end.
-34. **Audit community advice against what you already run.** Of ten well-regarded recommendations I reviewed on 2026-08-03, four were already in place, three were counterproductive for this setup, and three were worth adopting. The most-cited one, a plugin for Claude orchestrating Codex, burned 9M Claude tokens plus 1.2M Codex tokens on one feature in its own author's write-up. Check the numbers in a post before adopting its pattern, and distrust benchmark tables with no cited source.
+34. **Audit community advice against what you already run.** Of ten well-regarded recommendations I reviewed on 2026-08-03, four were already in place, three were counterproductive for this setup, and three were worth adopting. The most-cited one, a plugin for Claude orchestrating Codex, spent far more tokens on one feature in its own author's write-up than my wrapper spends on comparable work. Check the numbers in a post before adopting its pattern, and distrust benchmark tables with no cited source.
 
 ## License
 
