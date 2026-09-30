@@ -255,7 +255,7 @@ Details that each cost a failure to learn:
 
 - **Resolve by family name:** resolving tiers by catalog rank swapped frontier and standard on 2026-09-22, when the catalog listed Sol above Astra.
 - **Escalate on evidence:** `--escalate` lifts a class one rung. Medium is the default; going past high needs a specific observed failure.
-- **Refuse the priority service tier:** it bills 2.5x credits for 2x speed on Astra. The wrapper pins `service_tier="default"` and exits with an error on `--priority`. Answers are pinned to low verbosity.
+- **Refuse the priority service tier:** it bills 2.5x included subscription usage (2x on purchased credits), and OpenAI publishes no speedup figure for GPT-6 models. The wrapper pins `service_tier="default"` and exits with an error on `--priority`. Answers are pinned to low verbosity.
 - **`--ignore-user-config` is the cold-start fix:** TOML table overrides merge, so `-c 'mcp_servers={}'` changes nothing, and `codex mcp list -c 'mcp_servers={}'` still lists every server (found 2026-07-15). `--ignore-user-config` drops all MCP servers and plugins while auth survives through `CODEX_HOME`. The side effect: Codex workers see only the prompt plus files under `-C`, so the prompt must carry full context.
 - **Block the raw path:** a PreToolUse hook (`codex-guard.sh`) denies any Bash call to `codex exec` that bypasses the wrapper. The escape hatch is a `CODEX_RAW=1` prefix plus a stated reason.
 
@@ -538,7 +538,7 @@ Structure: a rewritten top block (Goal, Current state, Next steps, Open question
 
 ## Verification and adversarial review
 
-The highest-impact practice here, and the one Anthropic's Claude Code team recommends adopting if you adopt nothing else: **give the model a way to observe the result, then make it use that way.** If Claude can close the feedback loop, it iterates until the output is right. If it cannot, it guesses and reports the guess with the same confidence.
+The highest-impact practice here, and the first practice in Anthropic's [Claude Code best practices](https://code.claude.com/docs/en/best-practices): **give the model a way to observe the result, then make it use that way.** If Claude can close the feedback loop, it iterates until the output is right. If it cannot, it guesses and reports the guess with the same confidence.
 
 The rule in my global CLAUDE.md:
 
