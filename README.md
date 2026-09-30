@@ -8,7 +8,7 @@ Related public repos:
 - **[MAVEN](https://github.com/alectivism/maven-template):** my AI chief-of-staff template for Claude Code.
 - **[organization-ai-skills](https://github.com/alectivism/organization-ai-skills):** a skill pack for organizations rolling Claude out to staff.
 
-More at [alecfoster.com](https://www.alecfoster.com).
+A styled version with a section map lives at [alecfoster.com/tools/claude-code-playbook](https://www.alecfoster.com/tools/claude-code-playbook); this repo is the source of truth. More at [alecfoster.com](https://www.alecfoster.com).
 
 ## Contents
 
