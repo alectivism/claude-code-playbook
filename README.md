@@ -1,10 +1,10 @@
 # Claude Code Playbook
 
-I'm Alec Foster, Chief Agent Officer & Responsible AI Lead at the Marketing + Media Alliance (MMA). This is the Claude Code setup I run every day, written for experienced users and for people configuring Claude Code for a team: the architecture, the settings and the reasons behind them, the multi-model routing, and 34 lessons that each cost something to learn. It is extracted from my private setup notes with everything organization-specific removed. Facts are dated: version-sensitive claims carry the version and date they were checked, and the baseline is Claude Code 2.1.286 and codex-cli 0.159.2 on 2026-09-30.
+I'm Alec Foster, Chief Agent Officer & Responsible AI Lead at the Marketing + Media Alliance (MMA). This is the Claude Code setup I run every day, written for experienced users and for people configuring Claude Code for a team: the architecture, the settings and the reasons behind them, the multi-model routing, and 37 lessons that each cost something to learn. It is extracted from my private setup notes with everything organization-specific removed. Facts are dated: version-sensitive claims carry the version and date they were checked, and the baseline is Claude Code 2.1.286 and codex-cli 0.159.2 on 2026-09-30.
 
 Related public repos:
 
-- **[cross-model-agent-delegation](https://github.com/alectivism/cross-model-agent-delegation):** the Claude Code and Codex delegation kit described in the multi-model section, with the wrapper scripts.
+- **[cross-model-agent-delegation](https://github.com/alectivism/cross-model-agent-delegation):** the Claude Code and Codex delegation kit described in the multi-model section, with the wrapper scripts, plus the two-login setup described below.
 - **[MAVEN](https://github.com/alectivism/maven-template):** my AI chief-of-staff template for Claude Code.
 - **[organization-ai-skills](https://github.com/alectivism/organization-ai-skills):** a skill pack for organizations rolling Claude out to staff.
 
@@ -132,6 +132,18 @@ What each one buys:
 - **`tui: fullscreen`:** works around a rendering glitch where scrolling duplicated text indefinitely.
 - **`remoteControlAtStartup` and `agentPushNotifEnabled`:** every session is steerable from web and mobile from its first prompt, and I get a push when a background agent finishes or blocks.
 - **`autoDreamEnabled`:** background consolidation of auto-memory between sessions.
+
+### A second Claude login, same configuration
+
+Checked on Claude Code 2.1.318, 2026-11-04. I run a work login and a personal login. Claude Code ties its login to the config dir (on macOS a Keychain item named after the dir; the docs say other platforms keep `.credentials.json` inside the dir), so `/login` inside a session replaces the account for every session sharing that dir, and switching back means another browser sign-in. A second config dir is a second login:
+
+- `~/.claude-personal` holds symlinks back to `~/.claude` (settings, CLAUDE.md, skills, agents, hooks, plugins, and the session store) plus its own `.claude.json`, whose MCP servers are copied from the main one on each launch. Account fields never cross.
+- `claude-personal` is a launcher that sets `CLAUDE_CONFIG_DIR` and runs `claude`. Both logins stay signed in.
+- Because the session store is shared, `/exit` then `claude-personal --resume <id>` continues the same conversation on the other account. I checked it with a session that was told a code word on one login and asked for it on the other.
+- Agent-tool subagents always run on the caller's login, so a task for the other login goes through a wrapper with the same contract as the Codex one (`OUT=<file>`).
+- If the main login is an org seat, the launcher layers the cached org-managed settings onto the second login so both follow the same permission rules.
+
+The scripts are the `claude-accounts` skill in the [delegation kit](https://github.com/alectivism/cross-model-agent-delegation).
 
 ## MCP strategy: connectors, local servers, and context cost
 
@@ -436,7 +448,9 @@ I moved off blanket `bypassPermissions` to `defaultMode: auto` with a curated al
 
 ### Org-wide rules belong in server-managed settings
 
-Rules that must hold for every person and every session (hard `deny` entries for `rm -rf /`, reads of `.env` or `~/.ssh`, force pushes) belong in server-managed settings set by an admin in the Claude admin console, which apply to every session. Claude Code caches them locally as `~/.claude/remote-settings.json` (or `{}` when the organization has none), checks for updates at startup and hourly, and deletes the cache on logout. Edit the admin console, never the cache.
+Rules that must hold for every person and every session (hard `deny` entries for `rm -rf /`, reads of `.env` or `~/.ssh`, `ask` on force pushes) belong in server-managed settings set by an admin in the Claude admin console, which apply to every session. Claude Code caches them locally as `~/.claude/remote-settings.json` (or `{}` when the organization has none), checks for updates at startup and hourly, and deletes the cache on logout. Edit the admin console, never the cache.
+
+**Deny refuses; ask prompts.** A `deny` match is refused with no prompt, even when the person at the keyboard would approve. A managed policy I tested denied `rm` against whole path classes (`~/.claude`, `~/Library`, cloud-sync folders, `.git`), and it silently blocked a temp-file cleanup I had asked for. Moving those rules to `ask` fixed it: per the docs, `ask` still prompts in auto mode and matches any subcommand of a compound command. Keep `deny` for targets nobody should approve on reflex: `/`, `~`, `~/.ssh`, `~/.aws`, `sudo rm`, world-writable `chmod`, and secret reads written as `**/.env` so they match at any depth. The docs also state that Bash rules are not a security boundary: the same deletion via `mv` to the Trash isn't matched.
 
 ### Secrets live in a password manager
 
@@ -454,21 +468,25 @@ Safety rules in my global CLAUDE.md:
 A custom script replaces the default statusline. It is the most-glanced-at part of the setup:
 
 ```
-~/assistant 🔀main ✎28 | Opus 5.5 medium | 🧠 222k | 5h 🟢 53% · 1h47m | 7d 🟢 6% · 6d17h
+~/assistant | Opus 5.5 high | 🧠123k | work 5h 32% (2h10m) 7d 18% | personal 5h 6% 7d 4% | codex 12%
 💬 audit the best-practices doc, it's outdated…
 ```
 
-- **Directory and git:** `$HOME` shown as `~`; branch truncated at 24 characters; uncommitted-file count; ahead and behind counts, each shown only when nonzero.
+- **Directory:** `$HOME` shown as `~`. I dropped the git branch and uncommitted-file count on 2026-11-04: they took about 20 characters of a line that wraps, and I never acted on them.
 - **Model and effort merged:** effort is color-coded (low gray, medium blue, high green, xhigh orange, max red).
 - **Context:** tokens in use, in thousands.
-- **Rate limits:** real 5-hour and weekly usage with time to reset. Gauge: 🟢 under 70%, 🟡 70 to 90%, 🔴 90% and up.
+- **Rate limits, both logins:** the session's own login first (5-hour usage with a countdown, then weekly), then the other login. A dot appears only at 70% (🟡) or 90% (🔴), and a weekly bucket adds its reset day and time only past 70%, so a healthy line stays short.
 - **Line 2:** the start of the last message I typed, dimmed, so each block in the scrollback is labeled by its task.
 
 **The numbers come straight from stdin:** Claude Code 2.1.x passes `rate_limits.five_hour` and `rate_limits.seven_day` (each with `used_percentage` and `resets_at` in Unix epoch seconds) plus `context_window` token counts. These are the numbers `/usage` shows, so the script needs no cost model or calibration. The earlier version estimated usage with `ccusage` and hand-tuned divisors that drifted.
 
+**The other login's numbers** come from the OAuth usage endpoint `/usage` reads, cached and refreshed in the background at most every three minutes. It is undocumented, so the parser treats every bucket as optional.
+
 **Staleness:** `rate_limits` refreshes only on an API response, so an idle session's snapshot freezes. When a window lapses during idle time the script prints `now` instead of a misleading `0m`.
 
-**The remote-control badge is core UI:** the `/rc` indicator is drawn by Claude Code, and its state is absent from the statusline's stdin, so the script cannot recolor or hide it. When it wrapped onto a third line, the fix was compressing line 1: merge model and effort, drop the context percentage, strip "(1M context)" from the model name, and truncate long branch names.
+**A snapshot froze for seven weeks without an error.** Several sessions rendered at once, all writing the same `usage-snapshot.json.tmp` before renaming it, and one render left trailing junk in the file. From then on `jq --argjson` rejected the previous snapshot on every render, so nothing was written and the routing line read `UNKNOWN`. The fix: a unique `mktemp` file per render, and an unreadable previous snapshot treated as empty. Eight simultaneous renders now leave valid JSON.
+
+**The remote-control badge is core UI:** the `/rc` indicator is drawn by Claude Code, and its state is absent from the statusline's stdin, so the script cannot recolor or hide it. When it wrapped onto a third line, the fix was compressing line 1: merge model and effort, drop the context percentage, strip "(1M context)" from the model name, and truncate long branch names (the branch segment has since been dropped).
 
 ## Remote control, notifications, and agent teams
 
@@ -629,6 +647,9 @@ Prompts worth reusing:
 32. **Handoffs are claims.** Re-run the check a subagent or Codex run reports and label the result observed or reported. It costs one command and catches confident summaries of code that was never written.
 33. **Write the decision log before the work.** A summary written at the end is lost when the session has no end.
 34. **Audit community advice against what you already run.** Of ten well-regarded recommendations I reviewed on 2026-08-03, four were already in place, three were counterproductive for this setup, and three were worth adopting. The most-cited one, a plugin for Claude orchestrating Codex, spent far more tokens on one feature in its own author's write-up than my wrapper spends on comparable work. Check the numbers in a post before adopting its pattern, and distrust benchmark tables with no cited source.
+35. **`/login` switches every session on the config dir.** The login is stored per config dir, so a mid-conversation `/login` moves every parallel session on that dir too. Give the second account its own `CLAUDE_CONFIG_DIR` and share the rest by symlink.
+36. **A shared temp-file name is a race.** Concurrent statusline renders writing one `.tmp` path corrupted the snapshot, and a strict parser then refused it forever. Use `mktemp` and treat an unreadable previous state as empty.
+37. **Path-class rules belong in `ask`.** A deny never prompts, so it blocks the person as well as the model. Reserve `deny` for targets nobody should approve on reflex.
 
 ## License
 
